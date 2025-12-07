@@ -503,34 +503,37 @@ function renderClassDistributionChart(dist) {
 }
 
 function renderLengthDistributionChart(dist) {
-    const canvas = document.getElementById("length-distribution-chart");
-    if (!canvas) return;
-
-    const ctx = canvas.getContext("2d");
+    const ctx = document.getElementById("length-distribution-chart");
     if (!ctx) return;
 
     if (lengthChart) {
         lengthChart.destroy();
     }
 
-    const bins = dist.bins || [];
-    const real = dist.real || [];
-    const fake = dist.fake || [];
+    const bins = dist.bins || dist.edges || dist.x || [];
+    const real = dist.real || dist.real_counts || dist.real_hist || [];
+    const fake = dist.fake || dist.fake_counts || dist.fake_hist || [];
+
+    // На всякий случай подрежем до одинаковой длины
+    const minLen = Math.min(bins.length, real.length, fake.length);
+    const labels = bins.slice(0, minLen);
+    const realData = real.slice(0, minLen);
+    const fakeData = fake.slice(0, minLen);
 
     lengthChart = new Chart(ctx, {
-        type: "line",
+        type: "bar",
         data: {
-            labels: bins,
+            labels,
             datasets: [
                 {
                     label: "Real",
-                    data: real,
-                    tension: 0.25,
+                    data: realData,
+                    backgroundColor: "rgba(59,130,246,0.7)",
                 },
                 {
                     label: "Fake",
-                    data: fake,
-                    tension: 0.25,
+                    data: fakeData,
+                    backgroundColor: "rgba(248,113,113,0.7)",
                 },
             ],
         },
@@ -540,6 +543,12 @@ function renderLengthDistributionChart(dist) {
                 legend: {
                     labels: { color: "#e5e7eb" },
                 },
+                tooltip: {
+                    callbacks: {
+                        title: (items) =>
+                            "Text length ≤ " + items[0].label,
+                    },
+                },
             },
             scales: {
                 x: {
@@ -548,7 +557,12 @@ function renderLengthDistributionChart(dist) {
                         text: "Text length bin",
                         color: "#9ca3af",
                     },
-                    ticks: { color: "#9ca3af" },
+                    ticks: {
+                        color: "#9ca3af",
+                        maxRotation: 0,
+                        autoSkip: true,
+                        maxTicksLimit: 10,
+                    },
                     grid: { display: false },
                 },
                 y: {
