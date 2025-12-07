@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>JobShield – Fake Job Detector</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <link rel="stylesheet" href="style.css" />
+
+    <!-- TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+    <!-- JSZip -->
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+
+    <!-- PapaParse -->
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+    <!-- d3 + d3-cloud for WordCloud -->
+    <script src="https://d3js.org/d3.v5.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3-cloud@1.2.5/build/d3.layout.cloud.min.js"></script>
+</head>
+<body>
+<header class="app-header">
+    <div class="logo">
+        <span class="logo-icon">🛡️</span>
+        <span class="logo-text">JobShield</span>
+    </div>
+    <nav class="tabs">
+        <button class="tab-button active" data-tab="job-check">Job Check</button>
+        <button class="tab-button" data-tab="eda">EDA Dashboard</button>
+    </nav>
+</header>
+
+<main class="app-main">
+
+    <!-- JOB CHECK TAB -->
+    <section id="tab-job-check" class="tab-content active">
+        <div class="card">
+            <h2>Check your job posting</h2>
+            <p class="subtitle">
+                Вставьте текст вакансии — модель оценит вероятность того, что это фейк.
+            </p>
+
+            <div id="model-status" class="status status-loading">
+                Loading model and tokenizer…
+            </div>
+
+            <form id="job-form">
+                <div class="form-grid">
+                    <div class="form-group full">
+                        <label for="title">Title</label>
+                        <input id="title" name="title" type="text" placeholder="Senior Data Analyst" />
+                    </div>
+
+                    <div class="form-group full">
+                        <label for="company_profile">Company profile</label>
+                        <textarea id="company_profile" name="company_profile" rows="3"
+                                  placeholder="Short description of the company..."></textarea>
+                    </div>
+
+                    <div class="form-group full">
+                        <label for="description">Description</label>
+                        <textarea id="description" name="description" rows="4"
+                                  placeholder="Main responsibilities, tasks..."></textarea>
+                    </div>
+
+                    <div class="form-group full">
+                        <label for="requirements">Requirements</label>
+                        <textarea id="requirements" name="requirements" rows="3"
+                                  placeholder="Skills, experience, education..."></textarea>
+                    </div>
+
+                    <div class="form-group full">
+                        <label for="benefits">Benefits</label>
+                        <textarea id="benefits" name="benefits" rows="3"
+                                  placeholder="What the company offers..."></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="location">Location</label>
+                        <input id="location" name="location" type="text" placeholder="New York, NY / Remote" />
+                    </div>
+
+                    <div class="form-group">
+                        <label for="salary_range">Salary range</label>
+                        <input id="salary_range" name="salary_range" type="text"
+                               placeholder="$60,000 – $80,000" />
+                    </div>
+
+                    <div class="form-group">
+                        <label for="employment_type">Employment type</label>
+                        <select id="employment_type" name="employment_type">
+                            <option value="">Select...</option>
+                            <option>Full-time</option>
+                            <option>Part-time</option>
+                            <option>Contract</option>
+                            <option>Internship</option>
+                            <option>Temporary</option>
+                            <option>Other</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="industry">Industry</label>
+                        <input id="industry" name="industry" type="text"
+                               placeholder="Information Technology, Finance..." />
+                    </div>
+                </div>
+
+                <div class="actions">
+                    <button id="predict-btn" type="submit" disabled>Predict</button>
+                    <button id="clear-btn" type="button" class="secondary">Clear</button>
+                </div>
+            </form>
+
+            <div id="prediction-result" class="prediction hidden">
+                <h3>Result</h3>
+                <p class="probability">
+                    Probability of fake: <span id="probability-value">–</span>
+                </p>
+                <div id="prediction-label" class="badge"></div>
+                <p id="prediction-explainer" class="explanation"></p>
+            </div>
+        </div>
+    </section>
+
+    <!-- EDA TAB -->
+    <section id="tab-eda" class="tab-content">
+        <div class="eda-layout">
+
+            <div class="card">
+                <h2>Dataset overview</h2>
+                <p class="subtitle">Данные загружаются из <code>combined_dataset_clean.zip</code> и <code>eda_data.json</code>.</p>
+                <div id="eda-status" class="status status-loading">Loading EDA data…</div>
+                <div id="csv-info" class="csv-info"></div>
+            </div>
+
+            <div class="card">
+                <h3>Class distribution</h3>
+                <canvas id="class-distribution-chart" height="200"></canvas>
+            </div>
+
+            <div class="card">
+                <h3>Text length distribution</h3>
+                <canvas id="length-distribution-chart" height="200"></canvas>
+            </div>
+
+            <div class="card">
+                <h3>Text length boxplot</h3>
+                <canvas id="boxplot-canvas" height="220"></canvas>
+                <p class="small-note">
+                    Simple custom boxplot based on summary statistics from <code>eda_data.json</code>.
+                </p>
+            </div>
+
+            <div class="card">
+                <h3>Missing values by class</h3>
+                <canvas id="missing-values-chart" height="220"></canvas>
+            </div>
+
+            <div class="card wordcloud-card">
+                <h3>WordCloud – Real jobs</h3>
+                <div id="wordcloud-real" class="wordcloud"></div>
+            </div>
+
+            <div class="card wordcloud-card">
+                <h3>WordCloud – Fake jobs</h3>
+                <div id="wordcloud-fake" class="wordcloud"></div>
+            </div>
+        </div>
+    </section>
+</main>
+
+<footer class="app-footer">
+    <span>JobShield – client-side demo (TensorFlow.js, Chart.js, JSZip, PapaParse, d3-cloud)</span>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
