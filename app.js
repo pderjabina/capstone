@@ -92,9 +92,11 @@ async function loadTokenizer() {
     maxLen = cfg.max_len || cfg.max_len || 200;
     vocabSize = cfg.vocab_size || null;
 
-    if (cfg.oov_token && wordIndex[cfg.oov_token]) {
-        oovIndex = wordIndex[cfg.oov_token];
+    // ВАЖНО: используем oov_index из конфига, если он есть
+    if (typeof cfg.oov_index === "number") {
+        oovIndex = cfg.oov_index;
     } else {
+        // fallback: 1 — стандартный индекс OOV в Keras
         oovIndex = 1;
     }
 
