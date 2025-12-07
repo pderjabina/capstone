@@ -89,7 +89,7 @@ async function loadTokenizer() {
 
     tokenizerConfig = cfg;
     wordIndex = cfg.word_index || {};
-    maxLen = cfg.max_len || cfg.max_len || 200;
+    maxLen = cfg.max_len || 200;
     vocabSize = cfg.vocab_size || null;
 
     // ВАЖНО: используем oov_index из конфига, если он есть
@@ -373,7 +373,10 @@ function renderEdaChartsAndWordclouds(eda) {
 // Charts
 // ------------------------------
 function renderClassDistributionChart(dist) {
-    const ctx = document.getElementById("class-distribution-chart");
+    const canvas = document.getElementById("class-distribution-chart");
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     if (classChart) {
@@ -419,7 +422,10 @@ function renderClassDistributionChart(dist) {
 }
 
 function renderLengthDistributionChart(dist) {
-    const ctx = document.getElementById("length-distribution-chart");
+    const canvas = document.getElementById("length-distribution-chart");
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     if (lengthChart) {
@@ -479,7 +485,10 @@ function renderLengthDistributionChart(dist) {
 }
 
 function renderMissingValuesChart(missing) {
-    const ctx = document.getElementById("missing-values-chart");
+    const canvas = document.getElementById("missing-values-chart");
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     if (missingChart) {
