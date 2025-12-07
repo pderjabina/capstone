@@ -250,6 +250,7 @@ async function initEDA() {
             loadEdaJson(),
             loadCsvFromZip(),
         ]);
+console.log("EDA JSON keys:", Object.keys(edaData));
 
         if (csvInfo) {
             const infoDiv = document.getElementById("csv-info");
