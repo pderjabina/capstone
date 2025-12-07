@@ -510,12 +510,35 @@ function renderLengthDistributionChart(dist) {
         lengthChart.destroy();
     }
 
-    const bins = dist.bins || dist.edges || dist.x || [];
-    const real = dist.real || dist.real_counts || dist.real_hist || [];
-    const fake = dist.fake || dist.fake_counts || dist.fake_hist || [];
+    const binsRaw = dist.bins || dist.edges || dist.x || [];
+    const realRaw = dist.real || dist.real_counts || dist.real_hist || [];
+    const fakeRaw = dist.fake || dist.fake_counts || dist.fake_hist || [];
 
-    // На всякий случай подрежем до одинаковой длины
+    // На всякий случай лог — если что, посмотрим в консоли
+    console.log("Length dist raw:", {
+        bins: binsRaw.length,
+        real: realRaw.length,
+        fake: fakeRaw.length,
+        sampleReal: realRaw.slice(0, 5),
+        sampleFake: fakeRaw.slice(0, 5),
+    });
+
+    // Приводим всё к числам (мало ли, вдруг строки)
+    const bins = binsRaw.map((v) => Number(v));
+    const real = realRaw.map((v) => Number(v));
+    const fake = fakeRaw.map((v) => Number(v));
+
     const minLen = Math.min(bins.length, real.length, fake.length);
+
+    if (!minLen) {
+        console.warn("Length distribution: no usable data", {
+            binsLen: bins.length,
+            realLen: real.length,
+            fakeLen: fake.length,
+        });
+        return;
+    }
+
     const labels = bins.slice(0, minLen);
     const realData = real.slice(0, minLen);
     const fakeData = fake.slice(0, minLen);
@@ -529,11 +552,15 @@ function renderLengthDistributionChart(dist) {
                     label: "Real",
                     data: realData,
                     backgroundColor: "rgba(59,130,246,0.7)",
+                    borderColor: "rgba(191,219,254,1)",
+                    borderWidth: 1,
                 },
                 {
                     label: "Fake",
                     data: fakeData,
                     backgroundColor: "rgba(248,113,113,0.7)",
+                    borderColor: "rgba(254,202,202,1)",
+                    borderWidth: 1,
                 },
             ],
         },
@@ -566,6 +593,7 @@ function renderLengthDistributionChart(dist) {
                     grid: { display: false },
                 },
                 y: {
+                    beginAtZero: true,
                     title: {
                         display: true,
                         text: "Count",
@@ -578,6 +606,7 @@ function renderLengthDistributionChart(dist) {
         },
     });
 }
+
 
 function renderMissingValuesChart(missing) {
     const canvas = document.getElementById("missing-values-chart");
