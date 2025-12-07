@@ -348,27 +348,107 @@ async function loadCsvFromZip() {
 }
 
 function renderEdaChartsAndWordclouds(eda) {
-    if (eda.class_distribution) {
-        renderClassDistributionChart(eda.class_distribution);
+    if (!eda || typeof eda !== "object") {
+        console.warn("EDA: empty or invalid data", eda);
+        return;
     }
-    if (eda.text_length_distribution) {
-        renderLengthDistributionChart(eda.text_length_distribution);
-    }
-    if (eda.missing_values) {
-        renderMissingValuesChart(eda.missing_values);
-    }
-    if (eda.text_length_boxplot) {
-        renderBoxplot(eda.text_length_boxplot);
-    }
-    if (eda.wordcloud) {
-        if (eda.wordcloud.real) {
-            drawWordCloud("wordcloud-real", eda.wordcloud.real);
+
+    console.log("EDA JSON keys:", Object.keys(eda));
+
+    // ---------- 1. CLASS DISTRIBUTION (class_counts) ----------
+    if (eda.class_counts) {
+        const src = eda.class_counts;
+
+        // Пытаемся аккуратно вытащить real / fake
+        let real = 0;
+        let fake = 0;
+
+        if ("real" in src || "fake" in src) {
+            real = src.real ?? 0;
+            fake = src.fake ?? 0;
+        } else if ("0" in src || "1" in src) {
+            // частый вариант: {"0": real, "1": fake}
+            real = src["0"] ?? 0;
+            fake = src["1"] ?? 0;
+        } else {
+            // на крайний случай: берём первые два значения
+            const vals = Object.values(src);
+            if (vals.length >= 2) {
+                real = vals[0];
+                fake = vals[1];
+            }
         }
-        if (eda.wordcloud.fake) {
-            drawWordCloud("wordcloud-fake", eda.wordcloud.fake);
-        }
+
+        renderClassDistributionChart({ real, fake });
+    } else {
+        console.warn("EDA: no class_counts in JSON");
     }
+
+    // ---------- 2. TEXT LENGTH DISTRIBUTION (lengths) ----------
+    if (eda.lengths) {
+        const src = eda.lengths;
+
+        // ожидаемый формат:
+        // { bins: [...], real: [...], fake: [...] }
+        const bins =
+            src.bins ||
+            src.edges ||
+            src.x ||
+            [];
+        const real =
+            src.real ||
+            src.real_counts ||
+            src.real_hist ||
+            [];
+        const fake =
+            src.fake ||
+            src.fake_counts ||
+            src.fake_hist ||
+            [];
+
+        renderLengthDistributionChart({
+            bins,
+            real,
+            fake,
+        });
+    } else {
+        console.warn("EDA: no lengths in JSON");
+    }
+
+    // ---------- 3. MISSING VALUES (missing) ----------
+    if (eda.missing) {
+        const src = eda.missing;
+
+        // ожидаемый формат:
+        // { fields: [...], real: [...], fake: [...] }
+        const fields =
+            src.fields ||
+            src.columns ||
+            [];
+        const real =
+            src.real ||
+            src.real_share ||
+            [];
+        const fake =
+            src.fake ||
+            src.fake_share ||
+            [];
+
+        renderMissingValuesChart({
+            fields,
+            real,
+            fake,
+        });
+    } else {
+        console.warn("EDA: no missing in JSON");
+    }
+
+    // ---------- 4. BOXLOT + WORDCLOUD ----------
+    // В твоём JSON нет явных ключей для boxplot и wordcloud,
+    // поэтому аккуратно пропускаем эти визуализации.
+    // (Если потом добавите в eda_data.json отдельные поля — легко подключим.)
 }
+
 
 // ------------------------------
 // Charts
