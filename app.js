@@ -8,7 +8,7 @@ let maxLen = 0;
 let vocabSize = null;
 let oovIndex = 1;
 
-// Chart instances (to avoid duplicate rendering)
+// Chart instances (чтобы не дублировать графики)
 let classChart, lengthChart, missingChart;
 
 // ------------------------------
@@ -39,7 +39,7 @@ async function initApp() {
         modelStatus.classList.add("status-error");
     }
 
-    // EDA init is independent; if it упадёт – не ломаем JobCheck
+    // EDA отдельно: даже если модель упала, дашборд всё равно рисуем
     initEDA();
 }
 
@@ -89,7 +89,7 @@ async function loadTokenizer() {
 
     tokenizerConfig = cfg;
     wordIndex = cfg.word_index || {};
-    maxLen = cfg.max_len || 200;
+    maxLen = cfg.max_len || cfg.max_len || 200;
     vocabSize = cfg.vocab_size || null;
 
     // ВАЖНО: используем oov_index из конфига, если он есть
@@ -126,7 +126,7 @@ function buildFullTextFromForm(formData) {
 }
 
 function normalizeText(text) {
-    // lower-case, remove non-alphanumeric (simple English-focused preprocessing)
+    // простая нормализация под английский
     return text
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, " ")
@@ -151,7 +151,7 @@ function textToSequence(text) {
         seq.push(idx);
     }
 
-    // post-padding / truncation
+    // post-padding / обрезка
     if (seq.length > maxLen) {
         return seq.slice(0, maxLen);
     } else if (seq.length < maxLen) {
@@ -250,7 +250,8 @@ async function initEDA() {
             loadEdaJson(),
             loadCsvFromZip(),
         ]);
-console.log("EDA JSON keys:", Object.keys(edaData));
+
+        console.log("EDA JSON keys:", Object.keys(edaData));
 
         if (csvInfo) {
             const infoDiv = document.getElementById("csv-info");
@@ -274,31 +275,6 @@ console.log("EDA JSON keys:", Object.keys(edaData));
     }
 }
 
-/**
- * Ожидаемый формат файла data/eda_data.json (пример):
- *
- * {
- *   "class_distribution": { "real": 17000, "fake": 1800 },
- *   "text_length_distribution": {
- *      "bins": [0, 50, 100, ...],
- *      "real": [count, count, ...],
- *      "fake": [count, count, ...]
- *   },
- *   "text_length_boxplot": {
- *      "real": { "min": 20, "q1": 120, "median": 230, "q3": 400, "max": 1200 },
- *      "fake": { "min": 10, "q1": 80,  "median": 160, "q3": 300, "max": 900  }
- *   },
- *   "missing_values": {
- *      "fields": ["title", "company_profile", ...],
- *      "real":   [0.01, 0.2, ...],  // доли или проценты
- *      "fake":   [0.05, 0.4, ...]
- *   },
- *   "wordcloud": {
- *      "real": [ { "text": "engineer", "size": 40 }, ... ],
- *      "fake": [ { "text": "click",    "size": 50 }, ... ]
- *   }
- * }
- */
 async function loadEdaJson() {
     const res = await fetch("data/eda_data.json");
     if (!res.ok) {
@@ -315,7 +291,7 @@ async function loadCsvFromZip() {
     const buffer = await res.arrayBuffer();
     const zip = await JSZip.loadAsync(buffer);
 
-    // Find first CSV file in the archive
+    // берём первый CSV из архива
     let csvFile = null;
     zip.forEach((relativePath, file) => {
         if (!csvFile && /\.csv$/i.test(relativePath)) {
@@ -335,7 +311,7 @@ async function loadCsvFromZip() {
 
     const rows = parsed.data.length;
 
-    // Try to detect fraudulent column if present
+    // пытаемся найти колонку fraudulent
     let fakeCount = null;
     if (parsed.meta && parsed.meta.fields && parsed.meta.fields.includes("fraudulent")) {
         fakeCount = parsed.data.filter((row) => {
@@ -347,125 +323,56 @@ async function loadCsvFromZip() {
     return { rows, fakeCount };
 }
 
+// сопоставление ключей из eda_data.json с нашими рендерами
 function renderEdaChartsAndWordclouds(eda) {
-    if (!eda || typeof eda !== "object") {
-        console.warn("EDA: empty or invalid data", eda);
-        return;
+    // --- Class distribution ---
+    if (eda.class_distribution) {
+        renderClassDistributionChart(eda.class_distribution);
+    } else if (eda.class_counts) {
+        renderClassDistributionChart(eda.class_counts);
     }
 
-    console.log("EDA JSON keys:", Object.keys(eda));
+    // --- Text length distribution ---
+    if (eda.text_length_distribution) {
+        renderLengthDistributionChart(eda.text_length_distribution);
+    } else if (eda.lengths) {
+        // именно это сейчас есть в твоём JSON
+        renderLengthDistributionChart(eda.lengths);
+    }
 
-    // ---------- 1. CLASS DISTRIBUTION (class_counts) ----------
-    if (eda.class_counts) {
-        const src = eda.class_counts;
+    // --- Missing values ---
+    if (eda.missing_values) {
+        renderMissingValuesChart(eda.missing_values);
+    } else if (eda.missing) {
+        renderMissingValuesChart(eda.missing);
+    }
 
-        // Пытаемся аккуратно вытащить real / fake
-        let real = 0;
-        let fake = 0;
+    // --- Boxplot / WordCloud только если данные реально есть ---
+    if (eda.text_length_boxplot) {
+        renderBoxplot(eda.text_length_boxplot);
+    }
 
-        if ("real" in src || "fake" in src) {
-            real = src.real ?? 0;
-            fake = src.fake ?? 0;
-        } else if ("0" in src || "1" in src) {
-            // частый вариант: {"0": real, "1": fake}
-            real = src["0"] ?? 0;
-            fake = src["1"] ?? 0;
-        } else {
-            // на крайний случай: берём первые два значения
-            const vals = Object.values(src);
-            if (vals.length >= 2) {
-                real = vals[0];
-                fake = vals[1];
-            }
+    if (eda.wordcloud) {
+        if (eda.wordcloud.real) {
+            drawWordCloud("wordcloud-real", eda.wordcloud.real);
         }
-
-        renderClassDistributionChart({ real, fake });
-    } else {
-        console.warn("EDA: no class_counts in JSON");
+        if (eda.wordcloud.fake) {
+            drawWordCloud("wordcloud-fake", eda.wordcloud.fake);
+        }
     }
-
-    // ---------- 2. TEXT LENGTH DISTRIBUTION (lengths) ----------
-    if (eda.lengths) {
-        const src = eda.lengths;
-
-        // ожидаемый формат:
-        // { bins: [...], real: [...], fake: [...] }
-        const bins =
-            src.bins ||
-            src.edges ||
-            src.x ||
-            [];
-        const real =
-            src.real ||
-            src.real_counts ||
-            src.real_hist ||
-            [];
-        const fake =
-            src.fake ||
-            src.fake_counts ||
-            src.fake_hist ||
-            [];
-
-        renderLengthDistributionChart({
-            bins,
-            real,
-            fake,
-        });
-    } else {
-        console.warn("EDA: no lengths in JSON");
-    }
-
-    // ---------- 3. MISSING VALUES (missing) ----------
-    if (eda.missing) {
-        const src = eda.missing;
-
-        // ожидаемый формат:
-        // { fields: [...], real: [...], fake: [...] }
-        const fields =
-            src.fields ||
-            src.columns ||
-            [];
-        const real =
-            src.real ||
-            src.real_share ||
-            [];
-        const fake =
-            src.fake ||
-            src.fake_share ||
-            [];
-
-        renderMissingValuesChart({
-            fields,
-            real,
-            fake,
-        });
-    } else {
-        console.warn("EDA: no missing in JSON");
-    }
-
-    // ---------- 4. BOXLOT + WORDCLOUD ----------
-    // В твоём JSON нет явных ключей для boxplot и wordcloud,
-    // поэтому аккуратно пропускаем эти визуализации.
-    // (Если потом добавите в eda_data.json отдельные поля — легко подключим.)
 }
-
 
 // ------------------------------
 // Charts
 // ------------------------------
 function renderClassDistributionChart(dist) {
-    const canvas = document.getElementById("class-distribution-chart");
-    if (!canvas) return;
-
-    const ctx = canvas.getContext("2d");
+    const ctx = document.getElementById("class-distribution-chart");
     if (!ctx) return;
 
-    if (classChart) {
-        classChart.destroy();
-    }
+    if (classChart) classChart.destroy();
 
-    const real = dist.real ?? 0;
-    const fake = dist.fake ?? 0;
+    const real = dist.real ?? dist.real_count ?? 0;
+    const fake = dist.fake ?? dist.fake_count ?? 0;
 
     classChart = new Chart(ctx, {
         type: "bar",
@@ -506,61 +413,48 @@ function renderLengthDistributionChart(dist) {
     const ctx = document.getElementById("length-distribution-chart");
     if (!ctx) return;
 
-    if (lengthChart) {
-        lengthChart.destroy();
-    }
+    if (lengthChart) lengthChart.destroy();
 
-    const binsRaw = dist.bins || dist.edges || dist.x || [];
-    const realRaw = dist.real || dist.real_counts || dist.real_hist || [];
-    const fakeRaw = dist.fake || dist.fake_counts || dist.fake_hist || [];
+    // поддерживаем несколько вариантов имён полей
+    const bins = dist.bins || dist.bin_edges || dist.x || [];
+    const realRaw =
+        dist.real || dist.real_counts || dist.real_values || dist.real_hist || [];
+    const fakeRaw =
+        dist.fake || dist.fake_counts || dist.fake_values || dist.fake_hist || [];
 
-    // На всякий случай лог — если что, посмотрим в консоли
     console.log("Length dist raw:", {
-        bins: binsRaw.length,
+        bins: bins.length,
         real: realRaw.length,
         fake: fakeRaw.length,
         sampleReal: realRaw.slice(0, 5),
         sampleFake: fakeRaw.slice(0, 5),
     });
 
-    // Приводим всё к числам (мало ли, вдруг строки)
-    const bins = binsRaw.map((v) => Number(v));
-    const real = realRaw.map((v) => Number(v));
-    const fake = fakeRaw.map((v) => Number(v));
-
-    const minLen = Math.min(bins.length, real.length, fake.length);
-
-    if (!minLen) {
-        console.warn("Length distribution: no usable data", {
-            binsLen: bins.length,
-            realLen: real.length,
-            fakeLen: fake.length,
-        });
+    if (!bins.length || (!realRaw.length && !fakeRaw.length)) {
+        console.warn("Length distribution data is empty, skip chart");
         return;
     }
 
-    const labels = bins.slice(0, minLen);
-    const realData = real.slice(0, minLen);
-    const fakeData = fake.slice(0, minLen);
+    // если длины не совпадают — аккуратно подрежем до минимума
+    const n = Math.min(bins.length, realRaw.length || bins.length, fakeRaw.length || bins.length);
+    const labels = bins.slice(0, n);
+    const real = realRaw.slice(0, n);
+    const fake = fakeRaw.slice(0, n);
 
     lengthChart = new Chart(ctx, {
-        type: "bar",
+        type: "line",
         data: {
             labels,
             datasets: [
                 {
                     label: "Real",
-                    data: realData,
-                    backgroundColor: "rgba(59,130,246,0.7)",
-                    borderColor: "rgba(191,219,254,1)",
-                    borderWidth: 1,
+                    data: real,
+                    tension: 0.25,
                 },
                 {
                     label: "Fake",
-                    data: fakeData,
-                    backgroundColor: "rgba(248,113,113,0.7)",
-                    borderColor: "rgba(254,202,202,1)",
-                    borderWidth: 1,
+                    data: fake,
+                    tension: 0.25,
                 },
             ],
         },
@@ -570,12 +464,6 @@ function renderLengthDistributionChart(dist) {
                 legend: {
                     labels: { color: "#e5e7eb" },
                 },
-                tooltip: {
-                    callbacks: {
-                        title: (items) =>
-                            "Text length ≤ " + items[0].label,
-                    },
-                },
             },
             scales: {
                 x: {
@@ -584,16 +472,10 @@ function renderLengthDistributionChart(dist) {
                         text: "Text length bin",
                         color: "#9ca3af",
                     },
-                    ticks: {
-                        color: "#9ca3af",
-                        maxRotation: 0,
-                        autoSkip: true,
-                        maxTicksLimit: 10,
-                    },
+                    ticks: { color: "#9ca3af" },
                     grid: { display: false },
                 },
                 y: {
-                    beginAtZero: true,
                     title: {
                         display: true,
                         text: "Count",
@@ -607,17 +489,11 @@ function renderLengthDistributionChart(dist) {
     });
 }
 
-
 function renderMissingValuesChart(missing) {
-    const canvas = document.getElementById("missing-values-chart");
-    if (!canvas) return;
-
-    const ctx = canvas.getContext("2d");
+    const ctx = document.getElementById("missing-values-chart");
     if (!ctx) return;
 
-    if (missingChart) {
-        missingChart.destroy();
-    }
+    if (missingChart) missingChart.destroy();
 
     const fields = missing.fields || [];
     const real = missing.real || [];
