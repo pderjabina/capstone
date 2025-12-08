@@ -410,50 +410,110 @@ function renderClassDistributionChart(dist) {
 }
 
 function renderLengthDistributionChart(dist) {
-    const ctx = document.getElementById("length-distribution-chart");
-    if (!ctx) return;
+    const canvas = document.getElementById("length-distribution-chart");
+    if (!canvas) return;
 
-    if (lengthChart) lengthChart.destroy();
+    // Если раньше уже был график — убиваем, чтобы не наслаивался
+    if (lengthChart) {
+        lengthChart.destroy();
+        lengthChart = null;
+    }
 
-    // поддерживаем несколько вариантов имён полей
-    const bins = dist.bins || dist.bin_edges || dist.x || [];
-    const realRaw =
-        dist.real || dist.real_counts || dist.real_values || dist.real_hist || [];
-    const fakeRaw =
-        dist.fake || dist.fake_counts || dist.fake_values || dist.fake_hist || [];
+    const ctx2d = canvas.getContext("2d");
 
-    console.log("Length dist raw:", {
-        bins: bins.length,
-        real: realRaw.length,
-        fake: fakeRaw.length,
-        sampleReal: realRaw.slice(0, 5),
-        sampleFake: fakeRaw.slice(0, 5),
+    // Лог в консоль, чтобы видеть сырой объект
+    console.log("Length distribution raw object:", dist);
+
+    let bins = [];
+    let real = [];
+    let fake = [];
+
+    // ---- Вариант 1: классический формат
+    // { bins: [...], real: [...], fake: [...] }
+    if (Array.isArray(dist.bins)) {
+        bins = dist.bins;
+        real = dist.real || dist.real_counts || [];
+        fake = dist.fake || dist.fake_counts || [];
+    }
+    // ---- Вариант 2: раздельные структуры по классам
+    // { real: { bins: [...], counts: [...] }, fake: {...} }
+    else if (
+        dist.real &&
+        dist.fake &&
+        Array.isArray(dist.real.bins) &&
+        Array.isArray(dist.real.counts) &&
+        Array.isArray(dist.fake.counts)
+    ) {
+        bins = dist.real.bins;
+        real = dist.real.counts;
+        fake = dist.fake.counts;
+    }
+    // ---- Вариант 3: что-то вроде { x: [...], real: [...], fake: [...] }
+    else if (Array.isArray(dist.x)) {
+        bins = dist.x;
+        real = dist.real || [];
+        fake = dist.fake || [];
+    }
+    // ---- Вариант 4: fallback — берём любые числовые массивы
+    else {
+        const numericArrays = Object.entries(dist).filter(
+            ([, v]) => Array.isArray(v) && v.every((x) => typeof x === "number")
+        );
+
+        if (numericArrays.length >= 2) {
+            // первый массив считаем real, второй — fake, бин — просто номера
+            real = numericArrays[0][1];
+            fake = numericArrays[1][1];
+            const n = Math.max(real.length, fake.length);
+            bins = Array.from({ length: n }, (_, i) => i + 1);
+        }
+    }
+
+    console.log("Length dist parsed:", {
+        binsLen: bins.length,
+        realLen: real.length,
+        fakeLen: fake.length,
     });
 
-    if (!bins.length || (!realRaw.length && !fakeRaw.length)) {
-        console.warn("Length distribution data is empty, skip chart");
+    // Если данных так и не получилось собрать — просто пишем текст на canvas
+    if (!bins.length || (!real.length && !fake.length)) {
+        ctx2d.clearRect(0, 0, canvas.width, canvas.height);
+        ctx2d.fillStyle = "#9ca3af";
+        ctx2d.font = "14px system-ui";
+        ctx2d.textAlign = "center";
+        ctx2d.textBaseline = "middle";
+        ctx2d.fillText(
+            "No length data in eda_data.json.lengths",
+            canvas.width / 2,
+            canvas.height / 2
+        );
+        console.warn("Length distribution: no usable data, showing placeholder.");
         return;
     }
 
-    // если длины не совпадают — аккуратно подрежем до минимума
-    const n = Math.min(bins.length, realRaw.length || bins.length, fakeRaw.length || bins.length);
+    // подрезаем до общей минимальной длины
+    const n = Math.min(
+        bins.length,
+        real.length || bins.length,
+        fake.length || bins.length
+    );
     const labels = bins.slice(0, n);
-    const real = realRaw.slice(0, n);
-    const fake = fakeRaw.slice(0, n);
+    const realVals = real.slice(0, n);
+    const fakeVals = fake.slice(0, n);
 
-    lengthChart = new Chart(ctx, {
+    lengthChart = new Chart(canvas, {
         type: "line",
         data: {
             labels,
             datasets: [
                 {
                     label: "Real",
-                    data: real,
+                    data: realVals,
                     tension: 0.25,
                 },
                 {
                     label: "Fake",
-                    data: fake,
+                    data: fakeVals,
                     tension: 0.25,
                 },
             ],
@@ -488,6 +548,7 @@ function renderLengthDistributionChart(dist) {
         },
     });
 }
+
 
 function renderMissingValuesChart(missing) {
     const ctx = document.getElementById("missing-values-chart");
