@@ -413,55 +413,46 @@ function renderLengthDistributionChart(dist) {
     const canvas = document.getElementById("length-distribution-chart");
     if (!canvas) return;
 
-    // Если раньше уже был график — убиваем, чтобы не наслаивался
     if (lengthChart) {
         lengthChart.destroy();
         lengthChart = null;
     }
 
     const ctx2d = canvas.getContext("2d");
-
-    // Лог в консоль, чтобы видеть сырой объект
     console.log("Length distribution raw object:", dist);
 
     let bins = [];
     let real = [];
     let fake = [];
 
-    // ---- Вариант 1: классический формат
-    // { bins: [...], real: [...], fake: [...] }
+    // ---- Форматы, которые пробуем понять ----
     if (Array.isArray(dist.bins)) {
+        // классический: { bins: [...], real: [...], fake: [...] }
         bins = dist.bins;
         real = dist.real || dist.real_counts || [];
         fake = dist.fake || dist.fake_counts || [];
-    }
-    // ---- Вариант 2: раздельные структуры по классам
-    // { real: { bins: [...], counts: [...] }, fake: {...} }
-    else if (
+    } else if (
         dist.real &&
         dist.fake &&
         Array.isArray(dist.real.bins) &&
         Array.isArray(dist.real.counts) &&
         Array.isArray(dist.fake.counts)
     ) {
+        // { real: { bins, counts }, fake: { bins, counts } }
         bins = dist.real.bins;
         real = dist.real.counts;
         fake = dist.fake.counts;
-    }
-    // ---- Вариант 3: что-то вроде { x: [...], real: [...], fake: [...] }
-    else if (Array.isArray(dist.x)) {
+    } else if (Array.isArray(dist.x)) {
+        // { x: [...], real: [...], fake: [...] }
         bins = dist.x;
         real = dist.real || [];
         fake = dist.fake || [];
-    }
-    // ---- Вариант 4: fallback — берём любые числовые массивы
-    else {
+    } else {
+        // fallback: берём любые числовые массивы
         const numericArrays = Object.entries(dist).filter(
             ([, v]) => Array.isArray(v) && v.every((x) => typeof x === "number")
         );
-
         if (numericArrays.length >= 2) {
-            // первый массив считаем real, второй — fake, бин — просто номера
             real = numericArrays[0][1];
             fake = numericArrays[1][1];
             const n = Math.max(real.length, fake.length);
@@ -475,7 +466,6 @@ function renderLengthDistributionChart(dist) {
         fakeLen: fake.length,
     });
 
-    // Если данных так и не получилось собрать — просто пишем текст на canvas
     if (!bins.length || (!real.length && !fake.length)) {
         ctx2d.clearRect(0, 0, canvas.width, canvas.height);
         ctx2d.fillStyle = "#9ca3af";
@@ -491,15 +481,58 @@ function renderLengthDistributionChart(dist) {
         return;
     }
 
-    // подрезаем до общей минимальной длины
-    const n = Math.min(
+    // --- Обрезаем до общей длины массивов ---
+    let n = Math.min(
         bins.length,
         real.length || bins.length,
         fake.length || bins.length
     );
-    const labels = bins.slice(0, n);
-    const realVals = real.slice(0, n);
-    const fakeVals = fake.slice(0, n);
+    bins = bins.slice(0, n);
+    real = real.slice(0, n);
+    fake = fake.slice(0, n);
+
+    // --- Сглаживание: собираем в корзины, если точек слишком много ---
+    const MAX_BINS = 30;
+    let labels, realVals, fakeVals;
+
+    if (n > MAX_BINS) {
+        const minBin = Math.min(...bins);
+        const maxBin = Math.max(...bins);
+
+        const bucketCount = MAX_BINS;
+        const bucketSize = (maxBin - minBin) / bucketCount;
+
+        const bucketReal = new Array(bucketCount).fill(0);
+        const bucketFake = new Array(bucketCount).fill(0);
+        const bucketLabels = [];
+
+        for (let i = 0; i < bucketCount; i++) {
+            const start = Math.round(minBin + i * bucketSize);
+            const end = Math.round(minBin + (i + 1) * bucketSize);
+            bucketLabels.push(`${start}–${end}`);
+        }
+
+        for (let i = 0; i < n; i++) {
+            const x = bins[i];
+            const idx = Math.min(
+                bucketCount - 1,
+                Math.max(
+                    0,
+                    Math.floor(((x - minBin) / (maxBin - minBin)) * bucketCount)
+                )
+            );
+            bucketReal[idx] += real[i] || 0;
+            bucketFake[idx] += fake[i] || 0;
+        }
+
+        labels = bucketLabels;
+        realVals = bucketReal;
+        fakeVals = bucketFake;
+    } else {
+        labels = bins;
+        realVals = real;
+        fakeVals = fake;
+    }
 
     lengthChart = new Chart(canvas, {
         type: "line",
